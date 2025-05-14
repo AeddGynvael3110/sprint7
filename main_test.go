@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -60,7 +59,7 @@ func TestCafeCount(t *testing.T) {
 		{0, 0},
 		{1, 1},
 		{2, 2},
-		{100, len(cafeList["moscow"])}, // Москва имеет 5 кафе
+		{100, min(100, len(cafeList["moscow"]))}, // Москва имеет 5 кафе
 	}
 
 	for _, ct := range countTests {
@@ -74,26 +73,16 @@ func TestCafeCount(t *testing.T) {
 
 			cafes := strings.Split(strings.TrimSpace(response.Body.String()), ",")
 			if ct.count == 0 {
-				require.Len(t, cafes, 1)
-				require.Empty(t, cafes[0]) // ожидание пустой строки
+				assert.Len(t, cafes, 1)
+				assert.Empty(t, cafes[0]) // ожидание пустой строки
 			} else {
-				require.Len(t, cafes, ct.want)
+				assert.Len(t, cafes, ct.want)
 			}
 		})
 	}
 }
 
 func TestCafeSearch(t *testing.T) {
-	// Запускаем сервер в отдельной горутине
-	go main()
-
-	// Даем серверу время на старт
-	// В более сложных тестах лучше использовать sync механизмы
-	// или более конкретные ожидания
-	// Здесь просто подождем
-	// time.Sleep(time.Second)
-
-	// Определяем тестовые данные
 	tests := []struct {
 		search    string // передаваемое значение search
 		wantCount int    // ожидаемое количество кафе в ответе
@@ -105,33 +94,29 @@ func TestCafeSearch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.search, func(t *testing.T) {
-			resp, err := http.Get("http://localhost:8080/cafe?city=moscow&search=" + tt.search)
-			if err != nil {
-				t.Fatalf("http.Get() failed: %v", err)
-			}
-			defer resp.Body.Close()
+			response := httptest.NewRecorder()
+			req := httptest.NewRequest("GET", "/cafe?city=moscow&search="+tt.search, nil)
+
+			mainHandle(response, req)
+
+			assert.Equal(t, http.StatusOK, response.Code)
 
 			// Читаем ответ
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				t.Fatalf("ioutil.ReadAll() failed: %v", err)
-			}
+			body := response.Body.String()
 
 			// Разбиваем ответ на слайс строк
-			result := strings.Split(string(body), ",")
+			result := strings.Split(strings.TrimSpace(body), ",")
 			if len(body) == 0 {
 				result = nil
 			}
 
 			// Проверяем количество найденных кафе
-			if len(result) != tt.wantCount {
-				t.Errorf("got %d cafes, want %d", len(result), tt.wantCount)
-			}
+			assert.Len(t, result, tt.wantCount)
 
 			// Проверяем, что названия кафе содержат искомую подстроку search
 			for _, cafe := range result {
-				if cafe != "" && !strings.Contains(strings.ToLower(cafe), strings.ToLower(tt.search)) {
-					t.Errorf("cafe %q does not contain search term %q", cafe, tt.search)
+				if cafe != "" {
+					assert.Contains(t, strings.ToLower(cafe), strings.ToLower(tt.search), "cafe %q does not contain search term %q", cafe, tt.search)
 				}
 			}
 		})
